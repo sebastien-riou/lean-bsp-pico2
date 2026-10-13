@@ -1,0 +1,46 @@
+[bsp]
+name = "pico2"
+lean_bsp_contract_version = "1.0"
+version = "0.1.0"
+description = "Raspberry Pi Pico 2 board (RP2350: Cortex-M33 and Hazard3 RISC-V targets)"
+maintainer = "sebastien.riou@pqshield.com"
+entry_point = "bsp_cli.py"
+
+[bsp.hardware]
+flash_bytes = 0x400000
+ram_bytes = 0x82000                  # 512 KiB of main SRAM, plus the two 4 KiB scratch banks
+
+[bsp.build]
+backend = "custom"                   # bsp_cli.py configures pico-sdk's CMake build; CROSS_COMPILE selects the toolchain
+requires_tools = ["arm-none-eabi-gcc", "riscv-none-elf-gcc", "cmake", "hwbridge"]
+
+[bsp.setup]
+steps = ["./setup-pico-sdk"]         # pico-sdk 2.2.0 next to this repository, unless PICO_SDK_PATH names one
+
+[bsp.primitives]
+uart = true                          # UART 0 is the RP2350's own USB serial port
+led = true                           # 0 is the green LED
+button = true                        # 0 is BOOTSEL
+cpu_cycle_counter = true             # DWT CYCCNT on Arm, mcycle on RISC-V
+cpu_frequency = true
+cache_clear = true                   # the XIP cache
+heap_usage = true
+flash_read = false
+flash_erase = false
+flash_write = false
+
+# The RP2350 runs either its two Cortex-M33 or its two Hazard3 cores, never a mix; the BSP uses
+# core 0 of the pair. cflags as pico-sdk's own toolchain files set them.
+[[bsp.targets]]
+name = "cortex-m33"
+cpu = "cortex-m33"
+toolchain = "arm-none-eabi"
+cflags = ["-mcpu=cortex-m33", "-mthumb", "-march=armv8-m.main+fp+dsp", "-mfloat-abi=softfp"]
+run_mode = "auto-after-load"
+
+[[bsp.targets]]
+name = "rv32imcb"
+cpu = "rv32imcb"                     # the name applications already use for this core's prebuilt libraries
+toolchain = "riscv-none-elf"
+cflags = ["-march=rv32imac_zicsr_zifencei_zba_zbb_zbs_zbkb", "-mabi=ilp32"]
+run_mode = "auto-after-load"

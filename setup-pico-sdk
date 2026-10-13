@@ -1,0 +1,22 @@
+#!/bin/sh
+# Clone pico-sdk next to this repository, where bsp_cli.py looks for it unless PICO_SDK_PATH names
+# another one. Idempotent: an existing clone is left as it is.
+#
+# Usage: ./setup-pico-sdk [TAG]   (default 2.2.0, the version this BSP is tested with)
+
+set -e
+
+TAG=${1:-2.2.0}
+DEST=$(cd "$(dirname "$0")/.." && pwd)/pico-sdk
+
+if [ -n "$PICO_SDK_PATH" ]; then
+    echo "setup-pico-sdk: PICO_SDK_PATH is set ($PICO_SDK_PATH), nothing to do"
+    exit 0
+fi
+if [ -d "$DEST" ]; then
+    echo "setup-pico-sdk: $DEST already exists"
+    exit 0
+fi
+set -x
+git clone --depth=1 --branch "$TAG" --single-branch --recurse-submodules --shallow-submodules \
+    https://github.com/raspberrypi/pico-sdk.git "$DEST"
