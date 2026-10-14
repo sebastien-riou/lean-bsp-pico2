@@ -1,4 +1,4 @@
-/* bsp_api.h - lean-bsp contract 1.0
+/* bsp_api.h - lean-bsp contract 1.1
  *
  * Shared by every lean-bsp BSP and every lean-bsp application. Each BSP keeps
  * a byte-identical copy at include/bsp_api.h; `lean-bsp check` verifies it.
@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define LEAN_BSP_CONTRACT_VERSION "1.0"
+#define LEAN_BSP_CONTRACT_VERSION "1.1"
 
 /* ---- BSP -> app hooks ----
  * app_main is required and defined by the application. The BSP provides weak,
@@ -44,6 +44,20 @@ void      bsp_reset(void);                                           /* restart 
 void      bsp_clear_caches(void);        /* invalidate I/D caches and flash prefetch; no-op without caches */
 void      bsp_heap_usage_reset(void);    /* restart heap high-water-mark tracking */
 size_t    bsp_heap_usage(void);          /* growth of the heap high-water mark since the last reset, in bytes */
+
+/* ---- cycle timer: optional, bsp.toml primitive cycle_timer (since contract 1.1) ----
+ * A one-shot timer counting CPU cycles. Its interrupt preempts everything else the BSP runs and
+ * enters `handler` as the interrupt's own exception handler: on Cortex-M, with LR holding
+ * EXC_RETURN and the interrupted context stacked, so the handler may inspect or rewrite that
+ * context. The interrupt is taken `cycles` CPU cycles after the start plus a latency fixed for a
+ * given BSP: one more in `cycles`, exactly one cycle later. While the timer runs, the BSP holds off
+ * its other interrupts (its tick), so they add no cycles to what is being timed. */
+typedef void (*bsp_cycle_timer_handler_t)(void);
+void      bsp_cycle_timer_init(bsp_cycle_timer_handler_t handler);  /* once, before the first start */
+void      bsp_cycle_timer_start(uint32_t cycles);  /* from 0; the interrupt follows `cycles` cycles later */
+void      bsp_cycle_timer_stop(void);
+uint32_t  bsp_cycle_timer_read(void);              /* CPU cycles since the last start */
+void      bsp_cycle_timer_ack(void);               /* from the handler: clear the interrupt, stop the timer */
 
 /* ---- flash/NVM: function-pointer struct, lean-ftl-compatible shape ---- */
 typedef uint8_t (*bsp_nvm_erase_t)(void *base_address, unsigned n_pages);

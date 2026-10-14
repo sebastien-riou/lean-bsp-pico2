@@ -1,6 +1,6 @@
 [bsp]
 name = "pico2"
-lean_bsp_contract_version = "1.0"
+lean_bsp_contract_version = "1.1"
 version = "0.1.0"
 description = "Raspberry Pi Pico 2 board (RP2350: Cortex-M33 and Hazard3 RISC-V targets)"
 maintainer = "sebastien.riou@pqshield.com"
