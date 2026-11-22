@@ -24,7 +24,11 @@
 #include "tusb.h"
 
 #ifdef __arm__
+#include "hardware/irq.h"
 #include "hardware/structs/m33.h"
+#else
+#include "hardware/regs/rvcsr.h"
+#include "hardware/riscv.h"
 #endif
 
 static const bsp_capabilities_t capabilities = {
@@ -178,6 +182,118 @@ void bsp_clear_caches(void) {
     __dsb();
     __isb();
 }
+
+/* ---- cycle timer: the SIO's RISC-V platform timer, at the processor clock, on both cores ----
+ * The platform timer belongs to the SIO, not to the RISC-V cores: the Cortex-M33 reaches it the same
+ * way, its compare interrupt being SIO_IRQ_MTIMECMP there. mtime counts every clk_sys cycle
+ * (FULLSPEED), the CPU clock. A start stops it, clears it and sets mtimecmp to `cycles`; the
+ * interrupt follows the restart by `cycles` cycles plus a fixed latency. mtime and mtimecmp have 64
+ * bits, so any 32-bit `cycles` is a one-shot delay (28.6 s at 150 MHz); 0 only counts.
+ * bsp_cycle_timer_read() is mtime, since the start. mtime is shared with core 1, which the BSP never
+ * starts; nothing of pico-sdk's uses it.
+ * The handler is a plain function on both cores:
+ *  - Cortex-M33: it is the interrupt's own handler, in pico-sdk's RAM vector table, at priority 0;
+ *    LR holds EXC_RETURN and the interrupted context is stacked. While the timer runs, BASEPRI holds
+ *    every other interrupt off (USB, pico-sdk's alarms, the tick): pico-sdk gives them lower
+ *    priorities (0x80 by default), and BASEPRI never masks priority 0.
+ *  - Hazard3: the machine timer's slot of pico-sdk's vector table enters isr_riscv_machine_timer
+ *    below, which saves the registers a call may change and calls it; the interrupted pc is mepc,
+ *    which the handler may read and rewrite (the return goes there). While the timer runs, mie keeps
+ *    only MTIE: every other interrupt is held off.
+ * These functions run from RAM, so that no flash access ever delays them. */
+static bool held;
+
+#ifdef __arm__
+#define TIMER_IRQ_BIT (1u << SIO_IRQ_MTIMECMP)  /* in the first NVIC word */
+#define HOLD_BASEPRI 0x10u /* masks priorities 0x10 to 0xf0 (4 priority bits): all but the timer's */
+static uint32_t saved_basepri;
+
+static void __not_in_flash_func(hold_interrupts)(void) {
+    if (held) return;
+    __asm volatile("mrs %0, basepri" : "=r"(saved_basepri));
+    __asm volatile("msr basepri_max, %0" : : "r"(HOLD_BASEPRI) : "memory"); /* only ever raises it */
+    held = true;
+}
+
+static void __not_in_flash_func(release_interrupts)(void) {
+    if (!held) return;
+    __asm volatile("msr basepri, %0" : : "r"(saved_basepri) : "memory");
+    held = false;
+}
+
+static void timer_irq_init(bsp_cycle_timer_handler_t handler) {
+    const irq_handler_t current = irq_get_exclusive_handler(SIO_IRQ_MTIMECMP);
+    if (current != NULL && current != handler) irq_remove_handler(SIO_IRQ_MTIMECMP, current);
+    irq_set_exclusive_handler(SIO_IRQ_MTIMECMP, handler);
+    irq_set_priority(SIO_IRQ_MTIMECMP, 0);
+}
+
+static void __not_in_flash_func(timer_irq_on)(void) { m33_hw->nvic_iser[0] = TIMER_IRQ_BIT; }
+
+/* Once mtimecmp no longer asserts it: the pending bit, which the level may have set again. */
+static void __not_in_flash_func(timer_irq_off)(void) {
+    m33_hw->nvic_icer[0] = TIMER_IRQ_BIT;
+    m33_hw->nvic_icpr[0] = TIMER_IRQ_BIT;
+}
+#else
+static bsp_cycle_timer_handler_t timer_handler;
+static uint32_t saved_mie;
+
+/* pico-sdk's weak symbol. In RAM, as the vector table is: its `j` cannot reach flash. */
+__attribute__((interrupt)) void __not_in_flash_func(isr_riscv_machine_timer)(void) { timer_handler(); }
+
+static void __not_in_flash_func(hold_interrupts)(void) {
+    if (held) return;
+    saved_mie = riscv_read_clear_csr(mie, RVCSR_MIE_MEIE_BITS | RVCSR_MIE_MSIE_BITS | RVCSR_MIE_MTIE_BITS);
+    held = true;
+}
+
+static void __not_in_flash_func(release_interrupts)(void) {
+    if (!held) return;
+    riscv_write_csr(mie, saved_mie);
+    held = false;
+}
+
+static void timer_irq_init(bsp_cycle_timer_handler_t handler) { timer_handler = handler; }
+
+static void __not_in_flash_func(timer_irq_on)(void) { riscv_set_csr(mie, RVCSR_MIE_MTIE_BITS); }
+
+static void __not_in_flash_func(timer_irq_off)(void) { riscv_clear_csr(mie, RVCSR_MIE_MTIE_BITS); }
+#endif
+
+/* No interrupt pending or to come; mtime goes on counting for read(). */
+static void __not_in_flash_func(timer_disarm)(void) {
+    sio_hw->mtimecmph = UINT32_MAX;
+    timer_irq_off();
+}
+
+void bsp_cycle_timer_init(bsp_cycle_timer_handler_t handler) {
+    bsp_cycle_timer_stop();
+    timer_irq_init(handler);
+    sio_hw->mtime_ctrl |= SIO_MTIME_CTRL_FULLSPEED_BITS | SIO_MTIME_CTRL_EN_BITS;
+}
+
+void __not_in_flash_func(bsp_cycle_timer_start)(uint32_t cycles) {
+    hold_interrupts();
+    timer_disarm(); /* when started again before the interrupt */
+    const uint32_t ctrl = sio_hw->mtime_ctrl & ~SIO_MTIME_CTRL_EN_BITS;
+    sio_hw->mtime_ctrl = ctrl; /* stopped, so that it starts from 0 at the last write below */
+    sio_hw->mtime = 0;
+    sio_hw->mtimeh = 0;
+    sio_hw->mtimecmp = cycles;
+    sio_hw->mtimecmph = cycles ? 0u : UINT32_MAX; /* 0: count only, mtime never gets there */
+    if (cycles) timer_irq_on();
+    sio_hw->mtime_ctrl = ctrl | SIO_MTIME_CTRL_EN_BITS;
+}
+
+void __not_in_flash_func(bsp_cycle_timer_stop)(void) {
+    timer_disarm();
+    release_interrupts();
+}
+
+uint32_t __not_in_flash_func(bsp_cycle_timer_read)(void) { return sio_hw->mtime; }
+
+void __not_in_flash_func(bsp_cycle_timer_ack)(void) { bsp_cycle_timer_stop(); }
 
 /* ---- heap usage: how far the heap end moved since the last reset ---- */
 

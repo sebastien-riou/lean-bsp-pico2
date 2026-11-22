@@ -24,6 +24,7 @@ button = true                        # 0 is BOOTSEL
 cpu_cycle_counter = true             # DWT CYCCNT on Arm, mcycle on RISC-V
 cpu_frequency = true
 cache_clear = true                   # the XIP cache
+cycle_timer = true                   # the SIO's RISC-V platform timer on clk_sys, on both targets: any 32-bit count
 heap_usage = true
 flash_read = false
 flash_erase = false

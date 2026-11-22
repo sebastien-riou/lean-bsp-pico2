@@ -38,6 +38,7 @@ the ELF itself.
 | Cycle counter, CPU frequency | DWT `CYCCNT` on Cortex-M33, `mcycle` on Hazard3, at `clk_sys` |
 | Delay | busy wait on the 64-bit microsecond timer: works with interrupts masked |
 | Cache clear | the XIP cache in front of the flash |
+| Cycle timer | the SIO's RISC-V platform timer, which both kinds of core reach, counting `clk_sys`: a one-shot for any 32-bit count (28.6 s at 150 MHz), `read()` from the same counter. One more cycle delays the interrupt by exactly one instruction (checked on both cores). While it runs, every other interrupt is held off, USB included: BASEPRI on Cortex-M33 (the timer's interrupt is at priority 0), `mie` on Hazard3. The handler is a plain function on both (below) |
 | Heap usage | growth of the heap end since the last reset, tracked in `_sbrk` |
 | Reset | watchdog reboot, once the host took the pending output |
 | `app_tick` | from a 1 ms repeating timer, run only when the application defines `app_tick` |
@@ -54,7 +55,19 @@ services USB. So:
   output reaches whoever reads, however late the host comes. A board on a plain USB charger never
   gets past that point.
 - UART 0 lets interrupts in while it moves bytes, since only the USB interrupt does; `printf` and
-  `bsp_uart_tx` are therefore usable with interrupts masked, but briefly unmask them.
+  `bsp_uart_tx` are therefore usable with interrupts masked, but briefly unmask them. That does not
+  reach past what holds the cycle timer's competitors off (BASEPRI, `mie`) or out of a running
+  exception handler: output from the cycle timer's handler, or while the timer runs, must wait
+  (buffer it, send it afterwards from thread mode).
+
+### The cycle timer's handler
+
+A plain C function on both cores. On Cortex-M33 it is the handler of the timer's interrupt
+(`SIO_IRQ_MTIMECMP`) itself, in pico-sdk's RAM vector table: the hardware stacks the interrupted
+context, LR holds EXC_RETURN. On Hazard3 the machine timer's slot of
+pico-sdk's vector table enters the BSP's `isr_riscv_machine_timer`, which saves the registers a call
+may change and calls the handler; the interrupted pc is `mepc`, which the handler may read and
+rewrite (the return goes there). The interrupted registers themselves are out of its reach.
 - After `app_main` returns, `main()` parks with interrupts enabled, whatever the application left
   masked, so picotool can still reboot the board into BOOTSEL and load the next firmware.
 - After a fault the core stops and USB with it: only a power cycle (the hub's, through lean-hwbridge)
