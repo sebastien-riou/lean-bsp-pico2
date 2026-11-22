@@ -1,4 +1,4 @@
-/* bsp_api.h - lean-bsp contract 1.1
+/* bsp_api.h - lean-bsp contract 1.2
  *
  * Shared by every lean-bsp BSP and every lean-bsp application. Each BSP keeps
  * a byte-identical copy at include/bsp_api.h; `lean-bsp check` verifies it.
@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define LEAN_BSP_CONTRACT_VERSION "1.1"
+#define LEAN_BSP_CONTRACT_VERSION "1.2"
 
 /* ---- BSP -> app hooks ----
  * app_main is required and defined by the application. The BSP provides weak,
@@ -59,7 +59,25 @@ void      bsp_cycle_timer_stop(void);
 uint32_t  bsp_cycle_timer_read(void);              /* CPU cycles since the last start */
 void      bsp_cycle_timer_ack(void);               /* from the handler: clear the interrupt, stop the timer */
 
-/* ---- flash/NVM: function-pointer struct, lean-ftl-compatible shape ---- */
+/* ---- flash/NVM: function-pointer struct, lean-ftl-compatible shape ----
+ * optional: bsp.toml primitives flash_read, flash_erase, flash_write; regions declared in
+ * [[bsp.nvm_regions]] (since contract 1.2).
+ * A region is flash the firmware image never occupies: the application may erase and program
+ * all of it. The BSP's linker script gathers the sections named .bsp_nvm<N> (region N, from 0)
+ * at the region's start, without loading anything there, so that an application can lay data
+ * out in the region at link time. lean-bsp passes the regions' geometry to the application's
+ * compilation: LEAN_BSP_NVM_REGIONS, their number (not defined when there are none), and for
+ * each LEAN_BSP_NVM<N>_BASE, _SIZE, _PAGE_SIZE, _WRITE_SIZE and _ZERO_OVERWRITE (0 or 1).
+ *  - erase: erases n_pages pages from base_address, which is page-aligned; 0 pages is a no-op.
+ *  - write: dst is aligned to write_size and size a multiple of it; src may be anywhere,
+ *    misaligned or in the region itself (never overlapping dst). It programs only erased units,
+ *    or, where zero_overwrite is true, units it then overwrites with zeros.
+ *  - read: copies size bytes from the region to dst.
+ * Each returns BSP_NVM_OK on success; a write the flash refused without programming anything
+ * returns BSP_NVM_REFUSED; any other value is a failure the BSP numbers as it likes. */
+#define BSP_NVM_OK      0u
+#define BSP_NVM_REFUSED 6u              /* lean-ftl's LFTL_NVM_STATUS_REFUSED */
+
 typedef uint8_t (*bsp_nvm_erase_t)(void *base_address, unsigned n_pages);
 typedef uint8_t (*bsp_nvm_write_t)(void *dst, const void *src, uintptr_t size);
 typedef uint8_t (*bsp_nvm_read_t )(void *dst, const void *src, uintptr_t size);
@@ -68,7 +86,9 @@ typedef struct {
     const char       *name;             /* e.g. "internal-flash" */
     void             *base_address;
     uintptr_t         size;
-    uintptr_t         page_size;
+    uintptr_t         page_size;        /* the erase unit */
+    uint32_t          write_size;       /* the program unit, a power of two (since 1.2) */
+    bool              zero_overwrite;   /* zeros may be programmed over a programmed unit (since 1.2) */
     bsp_nvm_erase_t   erase;
     bsp_nvm_write_t   write;
     bsp_nvm_read_t    read;

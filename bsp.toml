@@ -1,13 +1,13 @@
 [bsp]
 name = "pico2"
-lean_bsp_contract_version = "1.1"
+lean_bsp_contract_version = "1.2"
 version = "0.1.0"
 description = "Raspberry Pi Pico 2 board (RP2350: Cortex-M33 and Hazard3 RISC-V targets)"
 maintainer = "sebastien.riou@pqshield.com"
 entry_point = "bsp_cli.py"
 
 [bsp.hardware]
-flash_bytes = 0x400000
+flash_bytes = 0x200000               # the lower half of the 4 MB flash; the upper half is NVM region 0
 ram_bytes = 0x82000                  # 512 KiB of main SRAM, plus the two 4 KiB scratch banks
 
 [bsp.build]
@@ -26,9 +26,17 @@ cpu_frequency = true
 cache_clear = true                   # the XIP cache
 cycle_timer = true                   # the SIO's RISC-V platform timer on clk_sys, on both targets: any 32-bit count
 heap_usage = true
-flash_read = false
-flash_erase = false
-flash_write = false
+flash_read = true                    # NVM region 0, the upper half of the flash
+flash_erase = true
+flash_write = true
+
+[[bsp.nvm_regions]]
+name = "flash-upper-half"            # never loaded: the image stays in the lower half
+base = 0x10200000
+size = 0x200000
+page_size = 4096                     # a sector, the erase unit
+write_size = 8                       # one program per unit: its 256-byte page, 0xFF around it
+zero_overwrite = false               # the W25Q32RV specifies programming for erased locations only
 
 # The RP2350 runs either its two Cortex-M33 or its two Hazard3 cores, never a mix; the BSP uses
 # core 0 of the pair. cflags as pico-sdk's own toolchain files set them.
@@ -45,3 +53,4 @@ cpu = "rv32imcb"                     # the name applications already use for thi
 toolchain = "riscv-none-elf"
 cflags = ["-march=rv32imac_zicsr_zifencei_zba_zbb_zbs_zbkb", "-mabi=ilp32"]
 run_mode = "auto-after-load"
+primitives_override = { flash_read = false, flash_erase = false, flash_write = false }  # the region is checked on cortex-m33 only, so far

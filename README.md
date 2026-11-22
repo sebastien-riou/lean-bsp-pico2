@@ -44,7 +44,7 @@ the ELF itself.
 | `app_tick` | from a 1 ms repeating timer, run only when the application defines `app_tick` |
 | `app_on_fault` | from the HardFault handler (`pc` is 0) on Cortex-M33, from the machine exception handler (`pc` is `mepc`) on Hazard3; the core then stops |
 | `app_on_exit` | default does nothing: `main()` then parks the CPU, USB still serviced |
-| Flash/NVM | not yet |
+| Flash/NVM | `cortex-m33` only so far: region 0, `flash-upper-half`, the upper 2 MB of the 4 MB QSPI flash (0x10200000, a Winbond W25Q32RV), 4 KiB sectors, 8-byte program unit, no zero overwrite (the W25Q32RV specifies programming for erased locations only). The image must fit the lower 2 MB (the link checks it). A write refuses a destination that does not read erased, then programs one unit at a time (its 256-byte page, 0xFF around it) and reads back; an erase checks its sectors read erased. Interrupts are masked for each sector erase (30 ms typical, 240 ms at most) and each program, not between them. A load through lean-hwbridge (picotool) rewrites only the image's sectors: the region keeps its content |
 
 ### USB is the console, and the way in
 
@@ -84,8 +84,10 @@ while plugging the board in, then `picotool load -x <elf>`.
 - `src/bsp_pico2.c`: `main()`, the primitives, the default application hooks, `_sbrk` and the fault
   handlers.
 - `include/bsp_api.h`: the contract header, identical to lean-bsp's canonical copy (`lbsp check` verifies it).
-- pico-sdk's own linker script: an application needing its own sets `linker_script` in `app.toml`.
-  `linker/default.ld` is pico-sdk's under the name the other boards use, so that such a script can
-  end with `INCLUDE default.ld` on every board.
+- `src/bsp_nvm.c`: NVM region 0, through pico-sdk's `hardware_flash`.
+- `linker/default.ld`: pico-sdk's linker script (`memmap_default.ld`), plus NVM region 0 (`NVM0`, where the
+  sections named `.bsp_nvm0` go, loading nothing there) and the check that the image stays below it.
+  An application needing its own script sets `linker_script` in `app.toml` and ends it with
+  `INCLUDE default.ld`, as on every board.
 - `bsp.toml`, `bsp_cli.py`, `setup-pico-sdk`: what lean-bsp reads and runs. `bsp_cli.py` is this board's
   CMake step on top of lean-bsp's board helpers (`leanbsp.backends`), which lean-bsp runs it with.
