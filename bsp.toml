@@ -53,4 +53,3 @@ cpu = "rv32imcb"                     # the name applications already use for thi
 toolchain = "riscv-none-elf"
 cflags = ["-march=rv32imac_zicsr_zifencei_zba_zbb_zbs_zbkb", "-mabi=ilp32"]
 run_mode = "auto-after-load"
-primitives_override = { flash_read = false, flash_erase = false, flash_write = false }  # the region is checked on cortex-m33 only, so far
