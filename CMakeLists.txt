@@ -33,5 +33,8 @@ pico_enable_stdio_usb(firmware 1)
 pico_enable_stdio_uart(firmware 0)
 if(LEAN_BSP_APP_LINKER_SCRIPT)
     pico_set_linker_script(firmware ${LEAN_BSP_APP_LINKER_SCRIPT})
+    # its `INCLUDE default.ld` finds linker/default.ld, which includes pico-sdk's memmap_default.ld
+    target_link_options(firmware PRIVATE -L${CMAKE_CURRENT_LIST_DIR}/linker
+                        -L${PICO_SDK_PATH}/src/rp2_common/pico_crt0/${PICO_CHIP})
 endif()
 pico_add_extra_outputs(firmware)

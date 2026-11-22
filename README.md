@@ -72,5 +72,7 @@ while plugging the board in, then `picotool load -x <elf>`.
   handlers.
 - `include/bsp_api.h`: the contract header, identical to lean-bsp's canonical copy (`lbsp check` verifies it).
 - pico-sdk's own linker script: an application needing its own sets `linker_script` in `app.toml`.
+  `linker/default.ld` is pico-sdk's under the name the other boards use, so that such a script can
+  end with `INCLUDE default.ld` on every board.
 - `bsp.toml`, `bsp_cli.py`, `setup-pico-sdk`: what lean-bsp reads and runs. `bsp_cli.py` is this board's
   CMake step on top of lean-bsp's board helpers (`leanbsp.backends`), which lean-bsp runs it with.
