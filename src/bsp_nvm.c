@@ -32,8 +32,22 @@
 #include "hardware/sync.h"
 
 #define NVM0_OFFSET     (2u * 1024u * 1024u) /* from the start of the flash */
-#define NVM0_BASE       (XIP_BASE + NVM0_OFFSET)
-#define NVM0_SIZE       (PICO_FLASH_SIZE_BYTES - NVM0_OFFSET)
+/* The bounds can be given at build time, BSP_NVM0_BASE and BSP_NVM0_SIZE, by a build that takes
+ * these accessors without the BSP around them (a prebuilt library for this part that offers the
+ * whole flash, for instance). A lean-bsp build defines neither: the region is the upper half of
+ * the flash, as bsp.toml and the linker script say. */
+#if defined(BSP_NVM0_BASE) != defined(BSP_NVM0_SIZE)
+#error "define both BSP_NVM0_BASE and BSP_NVM0_SIZE, or neither"
+#endif
+#ifdef BSP_NVM0_BASE
+#define NVM0_BASE  BSP_NVM0_BASE
+#define NVM0_SIZE  BSP_NVM0_SIZE
+#define NVM0_NAME  "build-time-bounds"
+#else
+#define NVM0_BASE  (XIP_BASE + NVM0_OFFSET)
+#define NVM0_SIZE  (PICO_FLASH_SIZE_BYTES - NVM0_OFFSET)
+#define NVM0_NAME  "flash-upper-half"
+#endif
 #define NVM0_WRITE_SIZE BSP_NVM0_WRITE_SIZE /* bsp_nvm.h */
 
 _Static_assert(FLASH_PAGE_SIZE % NVM0_WRITE_SIZE == 0, "a write unit must not straddle two flash pages");
@@ -93,7 +107,7 @@ static uint8_t nvm0_read(void *dst, const void *src, uintptr_t size) {
 
 const bsp_nvm_region_t bsp_nvm_regions[BSP_N_NVM_REGIONS] = {
     {
-        .name = "flash-upper-half",
+        .name = NVM0_NAME,
         .base_address = (void *)NVM0_BASE,
         .size = NVM0_SIZE,
         .page_size = FLASH_SECTOR_SIZE,
