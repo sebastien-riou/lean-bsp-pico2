@@ -296,38 +296,8 @@ uint32_t __not_in_flash_func(bsp_cycle_timer_read)(void) { return sio_hw->mtime;
 
 void __not_in_flash_func(bsp_cycle_timer_ack)(void) { bsp_cycle_timer_stop(); }
 
-/* ---- heap usage: how far the heap end moved since the last reset ---- */
-
-extern char end;           /* the heap's start, from the linker script */
-extern char __StackLimit;  /* its limit */
-static char *heap_end;
-static char *heap_mark;
-static char *heap_peak;
-
-/* pico-sdk's own _sbrk (pico_clib_interface), plus the high-water mark. */
-void *_sbrk(int incr) {
-    if (heap_end == NULL) heap_end = &end;
-    char *const prev = heap_end;
-    char *next = heap_end + incr;
-    if (next > &__StackLimit) {
-#if PICO_USE_OPTIMISTIC_SBRK
-        if (heap_end == &__StackLimit) return (void *)-1;
-        next = &__StackLimit;
-#else
-        return (void *)-1;
-#endif
-    }
-    heap_end = next;
-    if (heap_end > heap_peak) heap_peak = heap_end;
-    return prev;
-}
-
-void bsp_heap_usage_reset(void) {
-    heap_mark = heap_end == NULL ? &end : heap_end;
-    heap_peak = heap_mark;
-}
-
-size_t bsp_heap_usage(void) { return heap_peak > heap_mark ? (size_t)(heap_peak - heap_mark) : 0; }
+/* The heap is newlib's, grown by pico-sdk's own _sbrk; its use is counted by src/bsp_heap.c (contract
+ * 1.4), pico-sdk's malloc wrappers being left out (SKIP_PICO_MALLOC, CMakeLists.txt). */
 
 /* ---- faults: tell the application, then stop the core ----
  * The board is then unreachable over USB until a power cycle (the hub's, through lean-hwbridge):

@@ -64,6 +64,8 @@ def build(app: dict, target, bdir: Path) -> dict:
         cmake_list('LEAN_BSP_APP_INCLUDE_DIRS', app['include_dirs']),
         cmake_list('LEAN_BSP_APP_DEFINES', app['defines']),
         cmake_list('LEAN_BSP_APP_LINKER_SCRIPT', [app['linker_script']] if app.get('linker_script') else []),
+        cmake_list('LEAN_BSP_APP_LIB', [app['lib']] if app.get('lib') else []),
+        cmake_list('LEAN_BSP_APP_LINK_FLAGS', app.get('link_flags', []) if app.get('lib') else []),
     ]))
     generator = ['-G', 'Ninja'] if shutil.which('ninja') else []
     configure = [

@@ -1,6 +1,6 @@
 [bsp]
 name = "pico2"
-lean_bsp_contract_version = "1.2"
+lean_bsp_contract_version = "1.5"
 version = "0.1.0"
 description = "Raspberry Pi Pico 2 board (RP2350: Cortex-M33 and Hazard3 RISC-V targets)"
 maintainer = "sebastien.riou@pqshield.com"
@@ -25,7 +25,7 @@ cpu_cycle_counter = true             # DWT CYCCNT on Arm, mcycle on RISC-V
 cpu_frequency = true
 cache_clear = true                   # the XIP cache
 cycle_timer = true                   # the SIO's RISC-V platform timer on clk_sys, on both targets: any 32-bit count
-heap_usage = true
+heap_usage = true                    # src/bsp_heap.c, lean-bsp's heap counter
 flash_read = true                    # NVM region 0, the upper half of the flash
 flash_erase = true
 flash_write = true
@@ -38,14 +38,30 @@ page_size = 4096                     # a sector, the erase unit
 write_size = 8                       # one program per unit: its 256-byte page, 0xFF around it
 zero_overwrite = false               # the W25Q32RV specifies programming for erased locations only
 
+[bsp.mcu]                            # contract 1.5: what the application runs on
+vendor = "Raspberry Pi"
+part = "RP2350A"                     # the QFN-60 package, as pico-sdk's board header names it (PICO_RP2350A)
+families = ["RP2350"]
+checked = false                      # declared only
+reserved = ["USBCTRL", "QMI", "XIP", "CLOCKS", "PLL_SYS", "PLL_USB", "XOSC", "TIMER0", "WATCHDOG", "SIO", "GPIO25", "QSPI_SS", "DWT"]
+
+[[bsp.parts]]                        # the flash the image runs from, NVM region 0 its upper half
+role = "flash"
+vendor = "Winbond"
+part = "W25Q32RV"                    # as the board documentation names it
+checked = false                      # declared only
+
 # The RP2350 runs either its two Cortex-M33 or its two Hazard3 cores, never a mix; the BSP uses
-# core 0 of the pair. cflags as pico-sdk's own toolchain files set them.
+# core 0 of the pair. The Cortex-M33 cflags are nucleo-u5a5's, which select the same multilib and
+# predefined macros as pico-sdk's own toolchain files (-march=armv8-m.main+fp+dsp), and give the
+# same code: one archive per CPU serves both boards.
 [[bsp.targets]]
 name = "cortex-m33"
 cpu = "cortex-m33"
 toolchain = "arm-none-eabi"
-cflags = ["-mcpu=cortex-m33", "-mthumb", "-march=armv8-m.main+fp+dsp", "-mfloat-abi=softfp"]
+cflags = ["-mcpu=cortex-m33", "-mthumb", "-mfpu=fpv5-sp-d16", "-mfloat-abi=softfp"]
 run_mode = "auto-after-load"
+trustzone = "secure"                 # pico-sdk's rp2350-arm-s platform
 
 [[bsp.targets]]
 name = "rv32imcb"

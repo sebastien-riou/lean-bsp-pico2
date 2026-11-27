@@ -39,7 +39,7 @@ the ELF itself.
 | Delay | busy wait on the 64-bit microsecond timer: works with interrupts masked |
 | Cache clear | the XIP cache in front of the flash |
 | Cycle timer | the SIO's RISC-V platform timer, which both kinds of core reach, counting `clk_sys`: a one-shot for any 32-bit count (28.6 s at 150 MHz), `read()` from the same counter. One more cycle delays the interrupt by exactly one instruction (checked on both cores). While it runs, every other interrupt is held off, USB included: BASEPRI on Cortex-M33 (the timer's interrupt is at priority 0), `mie` on Hazard3. The handler is a plain function on both (below) |
-| Heap usage | growth of the heap end since the last reset, tracked in `_sbrk` |
+| Heap usage | lean-bsp's heap counter (contract 1.4), `src/bsp_heap.c`: the bytes requested from `malloc`, `calloc` and `realloc` and not freed yet, at most since the last reset. pico-sdk's own malloc wrappers are left out (`SKIP_PICO_MALLOC`); the heap is newlib's, grown by pico-sdk's `_sbrk` up to the end of main RAM |
 | Reset | watchdog reboot, once the host took the pending output |
 | `app_tick` | from a 1 ms repeating timer, run only when the application defines `app_tick` |
 | `app_on_fault` | from the HardFault handler (`pc` is 0) on Cortex-M33, from the machine exception handler (`pc` is `mepc`) on Hazard3; the core then stops |
